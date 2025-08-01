@@ -2,7 +2,8 @@
 
 (in-package "PSEUDO-TESTS")
 
-(defun my-add (a b) (pseudo "add a and b"))
+(defun my-func (a b)
+  (pseudo "multiply b by factorial of a."))
 
 (pseudefun my-subtract (left right) "Subtract right from left.")
 
@@ -13,4 +14,4 @@
   (format t "~&Hello, ~a, how goes it?~%" person))
 
 (pseudefun greet-all (&rest people)
-  "Greet all the people.")
+  "Greet each person in the list of people.")

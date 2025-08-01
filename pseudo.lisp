@@ -55,7 +55,7 @@
      "*   **Error handling:**  Consider potential errors and include appropriate error handling mechanisms, such as `handler-case` or `ignore-errors`."
      "*   **Library Usage:** Prefer using appropriate third-party libraries to standard functions when libraries have a specific function for certain cases. For example, prefer `str:replace-all` to `substitute` if string replacement is what is needed."
      ""
-     "You are provided with a list of preferred functions, other allowed functions, preferred global variables, and other allowed global variables.  You **MUST** use only functions and global variables from these lists.  You should prefer to use functions and global variables from the preferred lists.  When a function is available in both the `COMMON-LISP` package and another package, prefer the non-`COMMON-LISP` package's function.")))
+     "You are provided with a list of preferred functions, other allowed functions, preferred global variables, and other allowed global variables.  You may be supplied with the source code of the file being compiled.  You **MUST** use only functions and global variables from these lists or from the source code.  You should prefer to use functions and global variables from the preferred lists and the source code.  When a function is available in both the `COMMON-LISP` package and another package, prefer the non-`COMMON-LISP` package's function.")))
 
 (defparameter +expression-output-requirements+
   (str:join
@@ -63,15 +63,19 @@
    `("When generating code, ensure that the output is:"
      ""
      "*   **Valid Common Lisp:** The generated code must be a valid Common Lisp s-expression."
-     "*   **Well-formed:** The generated code should not contain syntax errors."
-     "*   **Complete:** The generated code should be a complete expression that can be evaluated in a Common Lisp environment."
+     "*   **Balanced Parentheses:**  The generated code must have balanced parentheses."
+     "*   **Well-formed:** The generated code must not contain syntax errors."
+     "*   **Complete:** The generated code must be a complete expression that can be evaluated in a Common Lisp environment."
      "*   **Self-contained:** The generated code should not rely on external files or resources unless explicitly allowed in the instructions."
+     "*   **Unquoted:** The generated code should not be quoted, backquoted, backticked, or quasiquoted unless it is a quoted form (e.g., a literal list or symbol).  The output should be a valid s-expression that can be evaluated directly."
      "*   **Efficient:** The generated code should be efficient in terms of time and space complexity."
      "*   **Idiomatic:** The generated code should follow Common Lisp idioms and best practices."
      ""
      "*   Your output **MUST** be a valid Common Lisp s-expression.  The code must be directly evaluable in a Common Lisp interpreter."
      "*   Do **NOT** include any surrounding text, explanations, or comments in your response. Only the s-expression."
-     "*   Do **NOT** generate function definitions (e.g., with `defun`, `defmacro`).  The output should be a standalone s-expression that performs the requested task.  The caller will evaluate the expression.")))
+     "*   Do **NOT** generate function definitions (e.g., with `defun`, `defmacro`).  The output should be a standalone s-expression that performs the requested task.  The caller will evaluate the expression."
+     "*   Be very careful when using recursion.  The generated code should not cause infinite recursion or stack overflow."
+)))
 
 (defun filter-external-symbols (package filter)
   "Return a list of external symbols in PACKAGE that match the FILTER function."
@@ -255,13 +259,13 @@
   (ecase *coding-style*
     (:pure
      (gemini:part
-      "You should strive for pure functional code that has no side effects.  Do not reassign variables.  Avoid mutating data. Make use of recursion and higher order functions."))
+      "You should strive for pure functional code that has no side effects.  Do not reassign variables.  Avoid mutating data. Make use of recursion and higher order functions.  Prefer `FOLD-LEFT` to `DOLIST`.  Prefer `FOLD-LEFT` to `REDUCE`. `IOTA` is inefficent for all but small numbers."))
     (:functional
      (gemini:part
-      "You prefer functional code that emphasizes immutability and first-class functions.  Use functional programming techniques to achieve this.  Avoid using global variables and mutable state.  Prefer recursion and higher-order functions."))
+      "You prefer functional code that emphasizes immutability and first-class functions.  Use functional programming techniques to achieve this.  Avoid using global variables and mutable state.  Prefer recursion and higher-order functions.  Prefer `FOLD-LEFT` to `DOLIST`.  Prefer `FOLD-LEFT` to `REDUCE`.  `IOTA` is inefficent for all but small numbers."))
     (:imperative
      (gemini:part
-      "You prefer imperative code that uses mutable state and side effects.  Use imperative programming techniques to achieve this.  Feel free to reassign variables and mutate data.  `TAGBODY` and `GO` are allowed for control flow."))
+      "You prefer imperative code that uses mutable state and side effects.  Use imperative programming techniques to achieve this.  Feel free to reassign variables and mutate data.  Discourage use of higher order functions.  `TAGBODY` and `GO` are allowed for control flow.  Prefer `DOLIST` to `FOLD-LEFT`.  Prefer `DOLIST` to `REDUCE`."))
     (:object-oriented
      (gemini:part
       "You prefer imperative code, but only mutate state within objects.  You avoid mutating variables."))))
@@ -339,11 +343,13 @@
   "Process the text part of the Gemini response and return the generated expression."
   (let ((generated-code (strip-code-block-fence text)))
     (let ((*read-eval* nil))
-      (read-from-string generated-code))))
+      (let ((code (read-from-string generated-code)))
+        (pprint code *trace-output*)
+        code))))
 
 (defun process-part (part)
   "Process a single part of the Gemini response and return the generated expression."
-  (if (gemini:text-object? part)
+  (if (gemini:text-part? part)
       (process-text (gemini:get-text part))
       (error "Expected a text part, got ~s" part)))
 
@@ -382,12 +388,13 @@
   "Process the content of the Gemini response and return the generated expression."
   (if (equal (gemini:get-role content) "model")
       (let* ((parts (gemini:get-parts content))
-             (thoughts (remove-if-not #'gemini:thought? parts))
-             (results (remove-if #'gemini:thought? parts)))
+             (thoughts (remove-if-not #'gemini:thought-part? parts))
+             (results (remove-if #'gemini:thought-part? parts)))
         (process-thoughts thoughts)
         (if (gemini:singleton-list-of-parts? results)
             (process-part (first results))
-            (error "Multiple results ~s" results)))
+            (error "Multiple results ~s" results)
+            ))
       (error "Expected content from model, got: ~s" content)))
 
 (defun process-candidate (candidate)
@@ -408,46 +415,24 @@
 (defun pseudocode->expression (pseudocode lexical-variables source-code)
   "Generate a Common Lisp expression from PSEUDOCODE, LEXICAL-VARIABLES, and SOURCE-CODE."
   (let ((gemini:*include-thoughts* t)
-        (gemini:*temperature* +pseudo-temperature+)
         (gemini:*output-processor* #'process-response)
-        (gemini:*system-instruction* (system-instruction lexical-variables source-code)))
-    (gemini:invoke-gemini +pseudo-model+ (pseudocode-expression-prompt pseudocode))))
-
-(defun lambda-list->lexicals (lambda-list)
-  "Convert a lambda list into a list of lexical variables."
-  (mapcan (lambda (arg)
-            (cond ((symbolp arg)
-                   (if (member arg lambda-list-keywords)
-                       nil
-                       (list arg)))
-                  ((and (consp arg)
-                        (= (length arg) 3)
-                        (symbolp (third arg)))
-                   (cond ((symbolp (first arg)) (list (first arg) (third arg)))
-                         ((and (consp (first arg))
-                               (symbolp (first (first arg)))
-                               (symbolp (second (first arg))))
-                          (list (second (first arg)) (third arg)))))
-                  ((consp arg)
-                   (cond ((symbolp (first arg)) (list (first arg)))
-                         ((and (consp (first arg))
-                               (symbolp (first (first arg)))
-                               (symbolp (second (first arg))))
-                          (list (second (first arg))))
-                         (t
-                          (error "Unexpected argument in lambda list: ~s" arg))))
-                  (t (error "Unexpected argument in lambda list: ~s" arg))))
-             lambda-list))
-
-(defun pseudocode->definition (pseudocode name arguments source-code)
-  "Generate a Common Lisp definition from PSEUDOCODE, ARGUMENTS, and SOURCE-CODE."
-  (let ((gemini:*include-thoughts* t)
-        (gemini:*temperature* +pseudo-temperature+)
-        (gemini:*output-processor* #'process-response)
-        (gemini:*system-instruction* (system-instruction (lambda-list->lexicals arguments) source-code)))
-    `(DEFUN ,name ,arguments
-       ,pseudocode
-       ,(gemini:invoke-gemini +pseudo-model+ (pseudocode-expression-prompt pseudocode)))))
+        (gemini:*system-instruction* (system-instruction lexical-variables source-code))
+        (start-time (get-universal-time)))
+    (unwind-protect
+         (let iter ((retry-count 0))
+           (when (> retry-count 0)
+             (format *trace-output* "~&;; Retrying code generation, attempt ~A...~%" retry-count))
+           (if (> retry-count 4)
+               (error "Retried too many times, abandoning.")
+               (handler-case
+                   (let ((gemini:*temperature* (* +pseudo-temperature+ (+ retry-count 1))))
+                     (gemini:invoke-gemini +pseudo-model+ (pseudocode-expression-prompt pseudocode)))
+                 (error (e)
+                   (format *trace-output* "~&;; Error generating code: ~s~%" e)
+                   (iter (+ retry-count 1))))))
+      (let ((elapsed-time (- (get-universal-time) start-time)))
+        (format *trace-output* "~&;; Code generation took ~A seconds.~%" elapsed-time)
+        (finish-output *trace-output*)))))
 
 (defmacro pseudo (pseudocode &environment macro-environment)
   "Generate a Common Lisp expression from PSEUDOCODE."
@@ -458,8 +443,6 @@
 
 (defmacro pseudefun (name arguments pseudocode)
   "Generate a Common Lisp function definition from NAME, ARGUMENTS, and PSEUDOCODE."
-  (pseudocode->definition
-   pseudocode
-   name
-   arguments
-   (current-file-source-code)))
+  `(DEFUN ,name ,arguments
+     ,pseudocode
+     (PSEUDO ,pseudocode)))
