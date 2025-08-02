@@ -83,6 +83,38 @@
         when (funcall filter sym)
           collect sym))
 
+(defun filter-symbols (package filter)
+  "Return a list of internal-symbols in PACKAGE that match the FILTER function."
+  (loop for sym being the symbols in package
+        when (funcall filter sym)
+          collect sym))
+
+(defun filter-visible-symbols (package filter)
+  "Return a list of visible symbols in PACKAGE."
+  (let* ((external (filter-external-symbols package filter))
+         (internal (filter-symbols package
+                                   (lambda (sym)
+                                     (and (not (member (symbol-name sym) external :test #'equal :key #'symbol-name))
+                                          (funcall filter sym)))))
+         (inherited (mappend (lambda (package)
+                               (filter-external-symbols
+                                package
+                                (lambda (sym)
+                                  (and (not (member (symbol-name sym) external :test #'equal :key #'symbol-name))
+                                       (not (member (symbol-name sym) internal :test #'equal :key #'symbol-name))
+                                       (funcall filter sym)))))
+                             (package-use-list package))))
+    (remove-duplicates (sort (append external internal inherited) #'string< :key #'symbol-name))))
+
+(defun visible-functions (package)
+  "Return a list of visible functions defined in the given PACKAGE."
+  (filter-visible-symbols
+   package
+   (lambda (sym)
+     (and (fboundp sym)
+          (not (macro-function sym))
+          (not (str:starts-with? "%" (symbol-name sym)))))))
+
 (defun external-functions (package)
   "Return a list of external functions defined in the given PACKAGE."
   (filter-external-symbols
@@ -90,6 +122,15 @@
    (lambda (sym)
      (and (fboundp sym)
           (not (macro-function sym))
+          (not (str:starts-with? "%" (symbol-name sym)))))))
+
+(defun visible-macros (package)
+  "Return a list of macros visible in the given PACKAGE."
+  (filter-visible-symbols
+   package
+   (lambda (sym)
+     (and (fboundp sym)
+          (macro-function sym)
           (not (str:starts-with? "%" (symbol-name sym)))))))
 
 (defun external-macros (package)
@@ -100,6 +141,13 @@
      (and (fboundp sym)
           (macro-function sym)
           (not (str:starts-with? "%" (symbol-name sym)))))))
+
+(defun visible-variables (package)
+  "Return a list of variables visible in the given PACKAGE."
+  (filter-visible-symbols package 
+                          (lambda (sym)
+                            (and (boundp sym)
+                                 (not (str:starts-with? "%" (symbol-name sym)))))))
 
 (defun external-variables (package)
   "Return a list of external functions defined in the given PACKAGE."
@@ -127,7 +175,7 @@
                   (str:ends-with? "-SYSTEM" name)
                   (str:ends-with? "-TEST" name)
                   (str:ends-with? "-TESTS" name)
-                  (find #\/ name)
+                  ;(find #\/ name)
                   (find #\. name)
                   )))
           (list-all-packages)))
@@ -158,7 +206,8 @@
       ""
       "You should prefer to use the following functions:"
       ""
-      ,@(mapcar (lambda (f) (format nil "* ~a" f))
+      ,@(mapcar (lambda (f)
+                  (format nil "* ~s" f))
                 (sort preferred-functions
                       #'string< :key #'symbol-name))))))
 
@@ -171,7 +220,8 @@
       ""
       "You are allowed to use the following additional functions:"
       ""
-      ,@(mapcar (lambda (f) (format nil "* ~a" f))
+      ,@(mapcar (lambda (f)
+                  (format nil "* ~s" f))
                 (sort allowed-functions
                       #'string< :key #'symbol-name))))))
 
@@ -184,7 +234,8 @@
       ""
       "You should prefer to use the following macros:"
       ""
-      ,@(mapcar (lambda (f) (format nil "* ~a" f))
+      ,@(mapcar (lambda (f)
+                  (format nil "* ~s" f))
                 (sort preferred-macros
                       #'string< :key #'symbol-name))))))
 
@@ -197,7 +248,8 @@
       ""
       "You are allowed to use the following additional macros:"
       ""
-      ,@(mapcar (lambda (f) (format nil "* ~a" f))
+      ,@(mapcar (lambda (f)
+                  (format nil "* ~s" f))
                 (sort allowed-macros
                       #'string< :key #'symbol-name))))))
 
@@ -206,11 +258,12 @@
   (gemini:part
    (str:join
     #\newline
-    `("**Preferred Macros**"
+    `("**Preferred Variables**"
       ""
       "You should prefer to use the following global variables:"
       ""
-      ,@(mapcar (lambda (f) (format nil "* ~a" f))
+      ,@(mapcar (lambda (f)
+                  (format nil "* ~s" f))
                 (sort preferred-variables
                       #'string< :key #'symbol-name))))))
 
@@ -223,7 +276,8 @@
       ""
       "You are allowed to use the following additional variables:"
       ""
-      ,@(mapcar (lambda (f) (format nil "* ~a" f))
+      ,@(mapcar (lambda (f)
+                  (format nil "* ~s" f))
                 (sort allowed-variables
                       #'string< :key #'symbol-name))))))
 
@@ -236,7 +290,8 @@
       ""
       "Your code may have free references to the following lexical variables:"
       ""
-      ,@(mapcar (lambda (v) (format nil "* ~a" v))
+      ,@(mapcar (lambda (v)
+                  (format nil "* ~(~a~)" v))
                 (sort lexical-variables
                       #'string< :key #'symbol-name))))))
 
@@ -293,9 +348,7 @@
 
 (defun system-instruction (lexical-variables source-code)
   "Create a system instruction for the Gemini API based on LEXICAL-VARIABLES and SOURCE-CODE."
-  (let* ((preferred-functions
-           (append (external-functions "COMMON-LISP")
-                   (external-functions "SB-CLTL2")))
+  (let* ((preferred-functions (visible-functions *package*))
 
          (other-allowed-functions
            (set-difference (get-top-level-functions) preferred-functions))
@@ -303,17 +356,14 @@
          (preferred-macros
            (remove-if (lambda (macro)
                         (str:starts-with? "DEF" (symbol-name macro)))
-                      (append (external-macros "COMMON-LISP")
-                              (external-macros "SB-CLTL2"))))
+                      (visible-macros *package*)))
 
          (other-allowed-macros
            (remove-if (lambda (macro)
                         (str:starts-with? "DEF" (symbol-name macro)))
                       (set-difference (get-top-level-macros) preferred-macros)))
 
-         (preferred-variables
-           (append (external-variables "COMMON-LISP")
-                   (external-variables "SB-CLTL2")))
+         (preferred-variables (visible-variables *package*))
 
          (other-allowed-variables
            (set-difference (get-top-level-variables) preferred-variables)))
@@ -443,6 +493,8 @@
 
 (defmacro pseudefun (name arguments pseudocode)
   "Generate a Common Lisp function definition from NAME, ARGUMENTS, and PSEUDOCODE."
-  `(DEFUN ,name ,arguments
-     ,pseudocode
-     (PSEUDO ,pseudocode)))
+  `(PROGN
+     (DEFUN ,name ,arguments
+       (PSEUDO ,pseudocode))
+     (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
+       (SETF (DOCUMENTATION ',name 'FUNCTION) ,pseudocode))))
