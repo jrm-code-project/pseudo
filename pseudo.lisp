@@ -2,13 +2,16 @@
 
 (in-package "PSEUDO")
 
-(defparameter +pseudo-model+ "gemini-2.5-pro"
+(defparameter +pseudo-model+ "gemini-2.5-flash"
   "The model name for the pseudocode generator.")
 
 (defparameter +pseudo-temperature+ 0.1
   "The temperature setting for the pseudocode generator.")
 
 (defparameter +pseudo-expression-prompt+ "Generate a Common Lisp expression from the following description: ")
+
+(defparameter +prompt-includes-docstrings+ nil
+  "Whether the prompt includes docstrings for functions and variables.")
 
 (defun current-file-source-code ()
   "Return the text of the current file.  Language fence is included."
@@ -60,7 +63,10 @@
 (defparameter +expression-output-requirements+
   (str:join
    #\newline
-   `("When generating code, ensure that the output is:"
+   `("Your task is code generation.  Specifically, you will be expanding pseudocode into Common Lisp."
+     "You are not attempting to interpret the pseudocode, but rather to generate a Common Lisp expression that implements the pseudocode."
+     "Evaluating the expanded pseudocode should be equivalent to evaluating the original pseudocode."
+     "When generating code, ensure that the output is:"
      ""
      "*   **Valid Common Lisp:** The generated code must be a valid Common Lisp s-expression."
      "*   **Balanced Parentheses:**  The generated code must have balanced parentheses."
@@ -68,6 +74,7 @@
      "*   **Complete:** The generated code must be a complete expression that can be evaluated in a Common Lisp environment."
      "*   **Self-contained:** The generated code should not rely on external files or resources unless explicitly allowed in the instructions."
      "*   **Unquoted:** The generated code should not be quoted, backquoted, backticked, or quasiquoted unless it is a quoted form (e.g., a literal list or symbol).  The output should be a valid s-expression that can be evaluated directly."
+     "*   **No Backtick:** Do *NOT* use a backtick immediately after the opening triple backticks.  Generated code **MUST NOT** begin with a backtick."
      "*   **Efficient:** The generated code should be efficient in terms of time and space complexity."
      "*   **Idiomatic:** The generated code should follow Common Lisp idioms and best practices."
      ""
@@ -75,127 +82,15 @@
      "*   Do **NOT** include any surrounding text, explanations, or comments in your response. Only the s-expression."
      "*   Do **NOT** generate function definitions (e.g., with `defun`, `defmacro`).  The output should be a standalone s-expression that performs the requested task.  The caller will evaluate the expression."
      "*   Be very careful when using recursion.  The generated code should not cause infinite recursion or stack overflow."
-)))
+     )))
 
-(defun filter-external-symbols (package filter)
-  "Return a list of external symbols in PACKAGE that match the FILTER function."
-  (loop for sym being the external-symbols in package
-        when (funcall filter sym)
-          collect sym))
-
-(defun filter-symbols (package filter)
-  "Return a list of internal-symbols in PACKAGE that match the FILTER function."
-  (loop for sym being the symbols in package
-        when (funcall filter sym)
-          collect sym))
-
-(defun filter-visible-symbols (package filter)
-  "Return a list of visible symbols in PACKAGE."
-  (let* ((external (filter-external-symbols package filter))
-         (internal (filter-symbols package
-                                   (lambda (sym)
-                                     (and (not (member (symbol-name sym) external :test #'equal :key #'symbol-name))
-                                          (funcall filter sym)))))
-         (inherited (mappend (lambda (package)
-                               (filter-external-symbols
-                                package
-                                (lambda (sym)
-                                  (and (not (member (symbol-name sym) external :test #'equal :key #'symbol-name))
-                                       (not (member (symbol-name sym) internal :test #'equal :key #'symbol-name))
-                                       (funcall filter sym)))))
-                             (package-use-list package))))
-    (remove-duplicates (sort (append external internal inherited) #'string< :key #'symbol-name))))
-
-(defun visible-functions (package)
-  "Return a list of visible functions defined in the given PACKAGE."
-  (filter-visible-symbols
-   package
-   (lambda (sym)
-     (and (fboundp sym)
-          (not (macro-function sym))
-          (not (str:starts-with? "%" (symbol-name sym)))))))
-
-(defun external-functions (package)
-  "Return a list of external functions defined in the given PACKAGE."
-  (filter-external-symbols
-   package
-   (lambda (sym)
-     (and (fboundp sym)
-          (not (macro-function sym))
-          (not (str:starts-with? "%" (symbol-name sym)))))))
-
-(defun visible-macros (package)
-  "Return a list of macros visible in the given PACKAGE."
-  (filter-visible-symbols
-   package
-   (lambda (sym)
-     (and (fboundp sym)
-          (macro-function sym)
-          (not (str:starts-with? "%" (symbol-name sym)))))))
-
-(defun external-macros (package)
-  "Return a list of external functions defined in the given PACKAGE."
-  (filter-external-symbols
-   package
-   (lambda (sym)
-     (and (fboundp sym)
-          (macro-function sym)
-          (not (str:starts-with? "%" (symbol-name sym)))))))
-
-(defun visible-variables (package)
-  "Return a list of variables visible in the given PACKAGE."
-  (filter-visible-symbols package 
-                          (lambda (sym)
-                            (and (boundp sym)
-                                 (not (str:starts-with? "%" (symbol-name sym)))))))
-
-(defun external-variables (package)
-  "Return a list of external functions defined in the given PACKAGE."
-  (filter-external-symbols package 
-                           (lambda (sym)
-                             (and (boundp sym)
-                                  (not (str:starts-with? "%" (symbol-name sym)))))))
-
-(defun filter-package-list ()
-  "Return a list of packages to consider for code generation."
-  (sort (append
-         (mappend (lambda (pn)
-                    (let ((p (find-package pn)))
-                      (when p (list p))))
-                  '("SB-CLTL2"
-                    "SB-MOP"))
-         (remove-if
-          (lambda (package)
-            (let ((name (package-name package)))
-              (or (equal name "KEYWORD")
-                  (str:starts-with? "QL-" name)
-                  (str:starts-with? "SB-" name)
-                  (str:starts-with? "SLYNK" name)
-                  (str:ends-with? "-ASD" name)
-                  (str:ends-with? "-SYSTEM" name)
-                  (str:ends-with? "-TEST" name)
-                  (str:ends-with? "-TESTS" name)
-                  ;(find #\/ name)
-                  (find #\. name)
-                  )))
-          (list-all-packages)))
-        #'string<
-        :key #'package-name))
-
-(defun get-top-level-functions ()
-  "Return a list of top-level functions defined anywhere."
-  (sort (remove-duplicates (mappend #'external-functions (filter-package-list)))
-        #'string< :key #'symbol-name))
-
-(defun get-top-level-macros ()
-  "Return a list of top-level macros defined anywhere."
-  (sort (remove-duplicates (mappend #'external-macros (filter-package-list)))
-        #'string< :key #'symbol-name))
-
-(defun get-top-level-variables ()
-  "Return a list of top-level functions defined anywhere."
-  (sort (remove-duplicates (mappend #'external-variables (filter-package-list)))
-        #'string< :key #'symbol-name))
+(defparameter +pseudo-control-requirements+
+  (str:join
+   #\newline
+   `("You **MUST NOT** generate calls to the following function:"
+     ""
+     " * `PSEUDO`"
+     " * `PSEUDEFUN`")))
 
 (defun preferred-functions-part (preferred-functions)
   "Create a Gemini part for preferred functions."
@@ -207,7 +102,8 @@
       "You should prefer to use the following functions:"
       ""
       ,@(mapcar (lambda (f)
-                  (format nil "* ~s" f))
+                  (format nil "* `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
+                                                            (deflow (documentation f 'function)))))
                 (sort preferred-functions
                       #'string< :key #'symbol-name))))))
 
@@ -221,7 +117,7 @@
       "You are allowed to use the following additional functions:"
       ""
       ,@(mapcar (lambda (f)
-                  (format nil "* ~s" f))
+                  (format nil "* `~(~s~)`" f))
                 (sort allowed-functions
                       #'string< :key #'symbol-name))))))
 
@@ -235,7 +131,8 @@
       "You should prefer to use the following macros:"
       ""
       ,@(mapcar (lambda (f)
-                  (format nil "* ~s" f))
+                  (format nil "* `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
+                                                            (deflow (documentation f 'function)))))
                 (sort preferred-macros
                       #'string< :key #'symbol-name))))))
 
@@ -249,7 +146,7 @@
       "You are allowed to use the following additional macros:"
       ""
       ,@(mapcar (lambda (f)
-                  (format nil "* ~s" f))
+                  (format nil "* `~(~s~)`" f))
                 (sort allowed-macros
                       #'string< :key #'symbol-name))))))
 
@@ -262,8 +159,9 @@
       ""
       "You should prefer to use the following global variables:"
       ""
-      ,@(mapcar (lambda (f)
-                  (format nil "* ~s" f))
+      ,@(mapcar (lambda (v)
+                  (format nil "* `~(~s~)`~@[ - ~a~]" v (and +prompt-includes-docstrings+
+                                                            (deflow (documentation v 'variable)))))
                 (sort preferred-variables
                       #'string< :key #'symbol-name))))))
 
@@ -276,8 +174,8 @@
       ""
       "You are allowed to use the following additional variables:"
       ""
-      ,@(mapcar (lambda (f)
-                  (format nil "* ~s" f))
+      ,@(mapcar (lambda (v)
+                  (format nil "* `~(~s~)`" v))
                 (sort allowed-variables
                       #'string< :key #'symbol-name))))))
 
@@ -346,27 +244,36 @@
      (gemini:part
       "Avoid using the LOOP macro if at all possible.  Prefer other iteration constructs like `dolist`, `dotimes`, or `map`.  Consider local iteration using LABELS or a NAMED-LET."))))
 
-(defun system-instruction (lexical-variables source-code)
+(defun pseudo-control-part ()
+  "Create a Gemini part for pseudo control requirements."
+  (gemini:part
+   (str:join
+    #\newline
+    `("**Pseudo Control Requirements**"
+      ""
+      ,+pseudo-control-requirements+))))
+
+(defun system-instruction (lexical-variables omit-functions source-code)
   "Create a system instruction for the Gemini API based on LEXICAL-VARIABLES and SOURCE-CODE."
-  (let* ((preferred-functions (visible-functions *package*))
+  (let* ((preferred-functions (set-difference (gemini:visible-functions *package*) omit-functions))
 
          (other-allowed-functions
-           (set-difference (get-top-level-functions) preferred-functions))
+           (set-difference (gemini:get-top-level-functions) preferred-functions))
 
          (preferred-macros
            (remove-if (lambda (macro)
                         (str:starts-with? "DEF" (symbol-name macro)))
-                      (visible-macros *package*)))
+                      (gemini:visible-macros *package*)))
 
          (other-allowed-macros
            (remove-if (lambda (macro)
                         (str:starts-with? "DEF" (symbol-name macro)))
-                      (set-difference (get-top-level-macros) preferred-macros)))
+                      (set-difference (gemini:get-top-level-macros) preferred-macros)))
 
-         (preferred-variables (visible-variables *package*))
+         (preferred-variables (gemini:visible-variables *package*))
 
          (other-allowed-variables
-           (set-difference (get-top-level-variables) preferred-variables)))
+           (set-difference (gemini:get-top-level-variables) preferred-variables)))
 
     (gemini:content
      :parts (remove nil
@@ -382,16 +289,22 @@
                           (loop-instructions)
                           (style-instructions)
                           (lexical-variables-part lexical-variables)
-                          (source-code-part source-code))))))
+                          (source-code-part source-code)
+                          (pseudo-control-part))))))
 
 (defun strip-code-block-fence (string)
   (str:join #\newline
             (remove-if (lambda (line) (str:starts-with? "```" (str:trim line)))
                        (str:split #\newline string))))
 
+(defun strip-leading-backtick (string)
+  (if (str:starts-with? "`" string)
+      (subseq string 1)
+      string))
+
 (defun process-text (text)
   "Process the text part of the Gemini response and return the generated expression."
-  (let ((generated-code (strip-code-block-fence text)))
+  (let ((generated-code (strip-leading-backtick (strip-code-block-fence text))))
     (let ((*read-eval* nil))
       (let ((code (read-from-string generated-code)))
         (pprint code *trace-output*)
@@ -402,6 +315,14 @@
   (if (gemini:text-part? part)
       (process-text (gemini:get-text part))
       (error "Expected a text part, got ~s" part)))
+
+(defun deflow (string)
+  "Removes newlines from STRING and replaces them with spaces, ensuring that the result is a single line."
+  (let ((lines
+            (remove-if (lambda (line) (zerop (length line)))
+                       (map 'list #'str:trim (str:split #\newline string)))))
+    (and lines 
+         (str:join #\Space lines))))
 
 (defun reflow-comment (lines)
   "Reflow a list of lines into a single string."
@@ -456,45 +377,52 @@
 (defun process-response (response)
   "Process the response from the Gemini API and return the generated expression."
   (if (gemini:gemini-response? response)
-      (let ((candidates (gemini:get-candidates response)))
-        (if (gemini:singleton-list-of-candidates? candidates)
-            (process-candidate (first candidates))
-            (error "Multiple candidates found in response: ~A" candidates)))
+      (unwind-protect
+           (let ((candidates (gemini:get-candidates response)))
+             (if (gemini:singleton-list-of-candidates? candidates)
+                 (process-candidate (first candidates))
+                 (error "Multiple candidates found in response: ~A" candidates)))
+        (let ((usage-metadata (gemini:get-usage-metadata response)))
+          (when usage-metadata
+            (gemini:process-usage-metadata usage-metadata))))
       (error "Unrecognized Gemini response ~s" response)))
 
-(defun pseudocode->expression (pseudocode lexical-variables source-code)
+(defun pseudocode->expression (pseudocode lexical-variables omit-functions source-code)
   "Generate a Common Lisp expression from PSEUDOCODE, LEXICAL-VARIABLES, and SOURCE-CODE."
   (let ((gemini:*include-thoughts* t)
         (gemini:*output-processor* #'process-response)
-        (gemini:*system-instruction* (system-instruction lexical-variables source-code))
+        (gemini:*system-instruction* (system-instruction lexical-variables omit-functions source-code))
+        (gemini:*tools* nil)
         (start-time (get-universal-time)))
     (unwind-protect
          (let iter ((retry-count 0))
            (when (> retry-count 0)
              (format *trace-output* "~&;; Retrying code generation, attempt ~A...~%" retry-count))
-           (if (> retry-count 4)
-               (error "Retried too many times, abandoning.")
-               (handler-case
+           (if (> retry-count 3)
+               ;; On the last retry, don't protect against errors so that we drop into the error handler.
+               (let ((gemini:*temperature* (* +pseudo-temperature+ (+ retry-count 1))))
+                 (gemini:invoke-gemini (pseudocode-expression-prompt pseudocode) :model +pseudo-model+))
+               (restart-case
                    (let ((gemini:*temperature* (* +pseudo-temperature+ (+ retry-count 1))))
-                     (gemini:invoke-gemini +pseudo-model+ (pseudocode-expression-prompt pseudocode)))
-                 (error (e)
-                   (format *trace-output* "~&;; Error generating code: ~s~%" e)
-                   (iter (+ retry-count 1))))))
+                     (gemini:invoke-gemini (pseudocode-expression-prompt pseudocode) :model +pseudo-model+))
+                 (retry-generation ()
+                  :report (lambda (s) (format s "Retry code generation"))
+                   (iter (1+ retry-count))))))
       (let ((elapsed-time (- (get-universal-time) start-time)))
         (format *trace-output* "~&;; Code generation took ~A seconds.~%" elapsed-time)
         (finish-output *trace-output*)))))
 
-(defmacro pseudo (pseudocode &environment macro-environment)
+(defmacro pseudo (pseudocode &optional omit &environment macro-environment)
   "Generate a Common Lisp expression from PSEUDOCODE."
   (pseudocode->expression
    pseudocode
    (lexical-variables macro-environment)
+   (list omit)
    (current-file-source-code)))
 
 (defmacro pseudefun (name arguments pseudocode)
   "Generate a Common Lisp function definition from NAME, ARGUMENTS, and PSEUDOCODE."
   `(PROGN
      (DEFUN ,name ,arguments
-       (PSEUDO ,pseudocode))
-     (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE)
-       (SETF (DOCUMENTATION ',name 'FUNCTION) ,pseudocode))))
+       ,pseudocode
+       (PSEUDO ,pseudocode ,name))))
