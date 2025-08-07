@@ -103,7 +103,7 @@
       ""
       ,@(mapcar (lambda (f)
                   (format nil "* `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
-                                                            (deflow (documentation f 'function)))))
+                                                            (gemini:deflow (documentation f 'function)))))
                 (sort preferred-functions
                       #'string< :key #'symbol-name))))))
 
@@ -132,7 +132,7 @@
       ""
       ,@(mapcar (lambda (f)
                   (format nil "* `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
-                                                            (deflow (documentation f 'function)))))
+                                                            (gemini:deflow (documentation f 'function)))))
                 (sort preferred-macros
                       #'string< :key #'symbol-name))))))
 
@@ -161,7 +161,7 @@
       ""
       ,@(mapcar (lambda (v)
                   (format nil "* `~(~s~)`~@[ - ~a~]" v (and +prompt-includes-docstrings+
-                                                            (deflow (documentation v 'variable)))))
+                                                            (gemini:deflow (documentation v 'variable)))))
                 (sort preferred-variables
                       #'string< :key #'symbol-name))))))
 
@@ -316,52 +316,13 @@
       (process-text (gemini:get-text part))
       (error "Expected a text part, got ~s" part)))
 
-(defun deflow (string)
-  "Removes newlines from STRING and replaces them with spaces, ensuring that the result is a single line."
-  (let ((lines
-            (remove-if (lambda (line) (zerop (length line)))
-                       (map 'list #'str:trim (str:split #\newline string)))))
-    (and lines 
-         (str:join #\Space lines))))
-
-(defun reflow-comment (lines)
-  "Reflow a list of lines into a single string."
-  (let iter ((lines lines)
-             (words nil)
-             (new-line ";;")
-             (answer ""))
-    (cond ((> (length new-line) 80)
-           (iter lines words ";;" (concatenate 'string answer new-line "
-")))
-          ((null words)
-           (cond ((null lines) (concatenate 'string answer new-line))
-                 ((zerop (length (car lines)))
-                  (iter (cdr lines) nil ";;" (concatenate 'string answer new-line "
-")))
-                 (t
-                  (iter (cdr lines) (str:split #\Space (car lines)) ";;" (concatenate 'string answer new-line "
-")))))
-          (t (iter lines (cdr words) (if (zerop (length new-line))
-                                         (car words)
-                                         (concatenate 'string new-line " " (car words)))
-               answer)))))
-
-(defun process-thought (thought)
-  (format *trace-output* "~&~a~%"
-          (reflow-comment
-           (mapcar #'str:trim
-                   (str:split #\newline (gemini:get-text thought))))))
-
-(defun process-thoughts (thoughts)
-  (mapc #'process-thought thoughts))
-
 (defun process-content (content)
   "Process the content of the Gemini response and return the generated expression."
   (if (equal (gemini:get-role content) "model")
       (let* ((parts (gemini:get-parts content))
              (thoughts (remove-if-not #'gemini:thought-part? parts))
              (results (remove-if #'gemini:thought-part? parts)))
-        (process-thoughts thoughts)
+        (gemini:process-thoughts thoughts)
         (if (gemini:singleton-list-of-parts? results)
             (process-part (first results))
             (error "Multiple results ~s" results)
