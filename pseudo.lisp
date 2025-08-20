@@ -38,25 +38,23 @@
      "You write code that is clear, concise, correct, efficient, and idiomatic.  "
      "You are an expert in the Common Lisp language and its libraries.  "
      "You have extensive knowledge of the Common Lisp ecosystem, standard libraries, and commonly used third-party libraries, including but not limited to: "
-     ""
-     "*   **Data manipulation**: `alexandria`, `str`"
-     "*   **Web development:** `hunchentoot`, `dexador`, `quri`, `cl-cookie`, `cl-smtp`, `cl-ppcre`"
-     "*   **Data serialization:** `json`, `cl-yaml`, `cl-csv`"
-     "*   **Concurrency:** `bordeaux-threads`"
-     "*   **Cryptography:** `ironclad`"
-     "*   **Dates and times:** `local-time`"
-     "*   **Foreign Function Interface (FFI):** `cffi`")))
+     " *   **Data manipulation**: `alexandria`, `str`"
+     " *   **Web development:** `hunchentoot`, `dexador`, `quri`, `cl-cookie`, `cl-smtp`, `cl-ppcre`"
+     " *   **Data serialization:** `json`, `cl-yaml`, `cl-csv`"
+     " *   **Concurrency:** `bordeaux-threads`"
+     " *   **Cryptography:** `ironclad`"
+     " *   **Dates and times:** `local-time`"
+     " *   **Foreign Function Interface (FFI):** `cffi`")))
 
 (defparameter +priorities+
   (str:join
    #\newline
    `("When generating code, prioritize:"
-     ""
-     "*   **Readability:** Use clear variable names and structure the code logically."
-     "*   **Efficiency:** Choose appropriate algorithms and data structures.  Avoid unnecessary operations."
-     "*   **Idiomatic Common Lisp:**  Leverage Common Lisp's features, `multiple-value-bind`, and macros, to write concise and expressive code."
-     "*   **Error handling:**  Consider potential errors and include appropriate error handling mechanisms, such as `handler-case` or `ignore-errors`."
-     "*   **Library Usage:** Prefer using appropriate third-party libraries to standard functions when libraries have a specific function for certain cases. For example, prefer `str:replace-all` to `substitute` if string replacement is what is needed."
+     " *   **Readability:** Use clear variable names and structure the code logically."
+     " *   **Efficiency:** Choose appropriate algorithms and data structures.  Avoid unnecessary operations."
+     " *   **Idiomatic Common Lisp:**  Leverage Common Lisp's features, `multiple-value-bind`, and macros, to write concise and expressive code."
+     " *   **Error handling:**  Consider potential errors and include appropriate error handling mechanisms, such as `handler-case` or `ignore-errors`."
+     " *   **Library Usage:** Prefer using appropriate third-party libraries to standard functions when libraries have a specific function for certain cases. For example, prefer `str:replace-all` to `substitute` if string replacement is what is needed."
      ""
      "You are provided with a list of preferred functions, other allowed functions, preferred global variables, and other allowed global variables.  You may be supplied with the source code of the file being compiled.  You **MUST** use only functions and global variables from these lists or from the source code.  You should prefer to use functions and global variables from the preferred lists and the source code.  When a function is available in both the `COMMON-LISP` package and another package, prefer the non-`COMMON-LISP` package's function.")))
 
@@ -67,30 +65,29 @@
      "You are not attempting to interpret the pseudocode, but rather to generate a Common Lisp expression that implements the pseudocode."
      "Evaluating the expanded pseudocode should be equivalent to evaluating the original pseudocode."
      "When generating code, ensure that the output is:"
+     " *   **Valid Common Lisp:** The generated code must be a valid Common Lisp s-expression."
+     " *   **Balanced Parentheses:**  The generated code must have balanced parentheses."
+     " *   **Well-formed:** The generated code must not contain syntax errors."
+     " *   **Complete:** The generated code must be a complete expression that can be evaluated in a Common Lisp environment."
+     " *   **Self-contained:** The generated code should not rely on external files or resources unless explicitly allowed in the instructions."
+     " *   **Unquoted:** The generated code should not be quoted, backquoted, backticked, or quasiquoted unless it is a quoted form (e.g., a literal list or symbol).  The output should be a valid s-expression that can be evaluated directly."
+     " *   **No Backtick:** Do *NOT* use a backtick immediately after the opening triple backticks.  Generated code **MUST NOT** begin with a backtick."
+     " *   **Efficient:** The generated code should be efficient in terms of time and space complexity."
+     " *   **Idiomatic:** The generated code should follow Common Lisp idioms and best practices."
      ""
-     "*   **Valid Common Lisp:** The generated code must be a valid Common Lisp s-expression."
-     "*   **Balanced Parentheses:**  The generated code must have balanced parentheses."
-     "*   **Well-formed:** The generated code must not contain syntax errors."
-     "*   **Complete:** The generated code must be a complete expression that can be evaluated in a Common Lisp environment."
-     "*   **Self-contained:** The generated code should not rely on external files or resources unless explicitly allowed in the instructions."
-     "*   **Unquoted:** The generated code should not be quoted, backquoted, backticked, or quasiquoted unless it is a quoted form (e.g., a literal list or symbol).  The output should be a valid s-expression that can be evaluated directly."
-     "*   **No Backtick:** Do *NOT* use a backtick immediately after the opening triple backticks.  Generated code **MUST NOT** begin with a backtick."
-     "*   **Efficient:** The generated code should be efficient in terms of time and space complexity."
-     "*   **Idiomatic:** The generated code should follow Common Lisp idioms and best practices."
-     ""
-     "*   Your output **MUST** be a valid Common Lisp s-expression.  The code must be directly evaluable in a Common Lisp interpreter."
-     "*   Do **NOT** include any surrounding text, explanations, or comments in your response. Only the s-expression."
-     "*   Do **NOT** generate function definitions (e.g., with `defun`, `defmacro`).  The output should be a standalone s-expression that performs the requested task.  The caller will evaluate the expression."
-     "*   Be very careful when using recursion.  The generated code should not cause infinite recursion or stack overflow."
+     " *   Your output **MUST** be a valid Common Lisp s-expression.  The code must be directly evaluable in a Common Lisp interpreter."
+     " *   Do **NOT** include any surrounding text, explanations, or comments in your response. Only the s-expression."
+     " *   Do **NOT** generate function definitions (e.g., with `defun`, `defmacro`).  The output should be a standalone s-expression that performs the requested task.  The caller will evaluate the expression."
+     " *   Be very careful when using recursion.  The generated code should not cause infinite recursion or stack overflow."
      )))
 
 (defparameter +pseudo-control-requirements+
   (str:join
    #\newline
-   `("You **MUST NOT** generate calls to the following function:"
-     ""
+   `("You **MUST NOT** generate calls to the following functions:"
      " * `PSEUDO`"
-     " * `PSEUDEFUN`")))
+     " * `PSEUDEFUN`"
+     "")))
 
 (defun preferred-functions-part (preferred-functions)
   "Create a Gemini part for preferred functions."
@@ -98,12 +95,10 @@
    (str:join
     #\newline
     `("**Preferred Functions**"
-      ""
       "You should prefer to use the following functions:"
-      ""
       ,@(mapcar (lambda (f)
-                  (format nil "* `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
-                                                            (gemini:deflow (documentation f 'function)))))
+                  (format nil " * `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
+                                                             (gemini:deflow (documentation f 'function)))))
                 (sort preferred-functions
                       #'string< :key #'symbol-name))))))
 
@@ -113,11 +108,9 @@
    (str:join
     #\newline
     `("**Other Allowed Functions**"
-      ""
       "You are allowed to use the following additional functions:"
-      ""
       ,@(mapcar (lambda (f)
-                  (format nil "* `~(~s~)`" f))
+                  (format nil " * `~(~s~)`" f))
                 (sort allowed-functions
                       #'string< :key #'symbol-name))))))
 
@@ -127,12 +120,10 @@
    (str:join
     #\newline
     `("**Preferred Macros**"
-      ""
       "You should prefer to use the following macros:"
-      ""
       ,@(mapcar (lambda (f)
-                  (format nil "* `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
-                                                            (gemini:deflow (documentation f 'function)))))
+                  (format nil " * `~(~s~)`~@[ - ~a~]" f (and +prompt-includes-docstrings+
+                                                             (gemini:deflow (documentation f 'function)))))
                 (sort preferred-macros
                       #'string< :key #'symbol-name))))))
 
@@ -142,11 +133,9 @@
    (str:join
     #\newline
     `("**Other Allowed Macros**"
-      ""
       "You are allowed to use the following additional macros:"
-      ""
       ,@(mapcar (lambda (f)
-                  (format nil "* `~(~s~)`" f))
+                  (format nil " * `~(~s~)`" f))
                 (sort allowed-macros
                       #'string< :key #'symbol-name))))))
 
@@ -156,12 +145,10 @@
    (str:join
     #\newline
     `("**Preferred Variables**"
-      ""
       "You should prefer to use the following global variables:"
-      ""
       ,@(mapcar (lambda (v)
-                  (format nil "* `~(~s~)`~@[ - ~a~]" v (and +prompt-includes-docstrings+
-                                                            (gemini:deflow (documentation v 'variable)))))
+                  (format nil " * `~(~s~)`~@[ - ~a~]" v (and +prompt-includes-docstrings+
+                                                             (gemini:deflow (documentation v 'variable)))))
                 (sort preferred-variables
                       #'string< :key #'symbol-name))))))
 
@@ -171,11 +158,9 @@
    (str:join
     #\newline
     `("**Other Allowed Variables**"
-      ""
       "You are allowed to use the following additional variables:"
-      ""
       ,@(mapcar (lambda (v)
-                  (format nil "* `~(~s~)`" v))
+                  (format nil " * `~(~s~)`" v))
                 (sort allowed-variables
                       #'string< :key #'symbol-name))))))
 
@@ -185,11 +170,9 @@
    (str:join
     #\newline
     `("**Free Variables**"
-      ""
       "Your code may have free references to the following lexical variables:"
-      ""
       ,@(mapcar (lambda (v)
-                  (format nil "* ~(~a~)" v))
+                  (format nil " * ~(~a~)" v))
                 (sort lexical-variables
                       #'string< :key #'symbol-name))))))
 
@@ -200,9 +183,7 @@
      (str:join
       #\newline
       `("**Source Code**"
-        ""
         "The source code you are working with is:"
-        ""
         ,@source-code)))))
 
 (defparameter *coding-style* :functional
@@ -250,7 +231,6 @@
    (str:join
     #\newline
     `("**Pseudo Control Requirements**"
-      ""
       ,+pseudo-control-requirements+))))
 
 (defun system-instruction (lexical-variables omit-functions source-code)
@@ -280,22 +260,23 @@
                     (list (gemini:part +general-instructions+)
                           (gemini:part +priorities+)
                           (gemini:part +expression-output-requirements+)
+                          (loop-instructions)
+                          (style-instructions)
+                          (pseudo-control-part)
                           (preferred-functions-part preferred-functions)
                           (other-allowed-functions-part other-allowed-functions)
                           (preferred-macros-part preferred-macros)
                           (other-allowed-macros-part other-allowed-macros)
                           (preferred-variables-part preferred-variables)
                           (other-allowed-variables-part other-allowed-variables)
-                          (loop-instructions)
-                          (style-instructions)
-                          (lexical-variables-part lexical-variables)
                           (source-code-part source-code)
-                          (pseudo-control-part))))))
+                          (lexical-variables-part lexical-variables)
+                          )))))
 
 (defun strip-code-block-fence (string)
   (str:join #\newline
-            (remove-if (lambda (line) (str:starts-with? "```" (str:trim line)))
-                       (str:split #\newline string))))
+            (remove "```" (str:split #\newline string)
+                    :test #'str:starts-with? :key #'str:trim)))
 
 (defun strip-leading-backtick (string)
   (if (str:starts-with? "`" string)
