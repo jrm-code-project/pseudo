@@ -305,7 +305,7 @@
              (results (remove-if #'gemini:thought-part? parts)))
         (gemini:process-thoughts thoughts)
         (if (gemini:singleton-list-of-parts? results)
-            (process-part (first results))
+            (process-part (svref results 0))
             (error "Multiple results ~s" results)
             ))
       (error "Expected content from model, got: ~s" content)))
@@ -322,7 +322,7 @@
       (unwind-protect
            (let ((candidates (gemini:get-candidates response)))
              (if (gemini:singleton-list-of-candidates? candidates)
-                 (process-candidate (first candidates))
+                 (process-candidate (svref candidates 0))
                  (error "Multiple candidates found in response: ~A" candidates)))
         (let ((usage-metadata (gemini:get-usage-metadata response)))
           (when usage-metadata
